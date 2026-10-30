@@ -1,0 +1,22 @@
+SX CAR — launcher da multimídia (K2001N, Android 13)
+=====================================================
+
+COMO GERAR O APK (uma vez só pra configurar):
+1. Crie um repositório PRIVADO chamado "sx-car" em https://github.com/new
+   (não marque nenhuma opção de README/.gitignore)
+2. Dê dois cliques em PUBLICAR.bat
+3. Aguarde ~5 min e baixe: https://github.com/semxorah/sx-car/raw/apk/SX-CAR.apk
+
+COMO INSTALAR NA MULTIMÍDIA:
+1. Copie SX-CAR.apk pra um pendrive
+2. Na multimídia, abra o gerenciador de arquivos, toque no APK e instale
+   (se pedir, permita "instalar apps desconhecidos")
+3. Aperte o botão HOME da multimídia → escolha "SX CAR" → "Sempre"
+   (ou abra o SX CAR → botão de ajustes no canto inferior esquerdo →
+    "Definir como tela inicial padrão")
+4. Na primeira vez, toque em "Permissão de brilho" e em "Permitir acesso aos arquivos"
+   dentro do app, pra liberar os controles.
+
+DICAS:
+- Segure um botão da tela inicial pra trocar o app que ele abre ou escondê-lo.
+- A intro com o alien toca uma vez a cada ligada do carro.
