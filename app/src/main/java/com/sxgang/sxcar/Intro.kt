@@ -41,18 +41,24 @@ fun greeting(): String {
 class Voice(ctx: Context) {
     private var ready = false
     private var pending: String? = null
-    private val tts = TextToSpeech(ctx.applicationContext) { status ->
-        if (status == TextToSpeech.SUCCESS) {
-            runCatching { tts?.language = Locale("pt", "BR") }
-            ready = true
-            pending?.let { say(it) }
+    private var tts: TextToSpeech? = null
+
+    init {
+        tts = TextToSpeech(ctx.applicationContext) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                runCatching { tts?.language = Locale("pt", "BR") }
+                ready = true
+                pending?.let { say(it) }
+            }
         }
     }
+
     fun say(text: String) {
         if (!ready) { pending = text; return }
-        runCatching { tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "sxcar") }
+        runCatching { tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "sxcar") }
     }
-    fun shutdown() = runCatching { tts.shutdown() }
+
+    fun shutdown() = runCatching { tts?.shutdown() }
 }
 
 private const val INTRO_MS = 7000L
