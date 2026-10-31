@@ -26,10 +26,27 @@ jobs:
           $SDK "platforms;android-34" "build-tools;34.0.0" > /dev/null
 
       - name: Build release APK
+        id: build
+        continue-on-error: true
         run: |
           sed -i 's/\r$//' gradlew
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace
+          set -o pipefail
+          ./gradlew assembleRelease --no-daemon 2>&1 | tee build.log
+
+      - name: Publicar log do build
+        if: always()
+        run: |
+          git config user.name "sx-car-bot"
+          git config user.email "bot@sxgang"
+          git fetch origin log 2>/dev/null || true
+          git checkout --orphan log
+          git rm -rf --cached . -q
+          grep -vE '^\s*$' build.log | tail -400 > build-tail.log
+          git add -f build-tail.log
+          git commit -m "log $(date -u +%F_%H%M) status=${{ steps.build.outcome }}" -q
+          git push -f origin log
+          test "${{ steps.build.outcome }}" = "success"
 
       - name: Rename APK
         run: cp app/build/outputs/apk/release/app-release.apk SX-CAR.apk
