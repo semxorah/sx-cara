@@ -43,7 +43,8 @@ class FilesActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         val usbOnly = intent.getBooleanExtra("usb", false)
-        setContent { MaterialTheme(colorScheme = darkColorScheme(primary = SxGreen)) { Explorer(usbOnly) { finish() } } }
+        val filter = intent.getStringExtra("filter")
+        setContent { MaterialTheme(colorScheme = darkColorScheme(primary = SxGreen)) { Explorer(usbOnly, filter) { finish() } } }
     }
     override fun onResume() {
         super.onResume()
@@ -79,7 +80,7 @@ private fun roots(ctx: android.content.Context): List<Root> {
 private fun hasAllFiles(): Boolean = Build.VERSION.SDK_INT < 30 || Environment.isExternalStorageManager()
 
 @Composable
-private fun Explorer(usbOnly: Boolean, onExit: () -> Unit) {
+private fun Explorer(usbOnly: Boolean, filter: String?, onExit: () -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     var granted by remember { mutableStateOf(hasAllFiles()) }
     val allRoots = remember(granted) { roots(ctx) }
@@ -104,7 +105,7 @@ private fun Explorer(usbOnly: Boolean, onExit: () -> Unit) {
                 Icon(Icons.Filled.ArrowBack, null, tint = SxText)
             }
             Text(
-                if (stack.isEmpty()) (if (usbOnly) "USB" else "Arquivos") else stack.last().name.ifBlank { "/" },
+                if (stack.isEmpty()) (when { usbOnly -> "USB"; filter == "video" -> "Vídeos"; filter == "audio" -> "Músicas"; else -> "Arquivos" }) else stack.last().name.ifBlank { "/" },
                 color = SxText, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, modifier = Modifier.weight(1f),
             )
             if (!granted) TextButton(onClick = {
@@ -128,6 +129,13 @@ private fun Explorer(usbOnly: Boolean, onExit: () -> Unit) {
             val entries = remember(dir, refresh, granted) {
                 (dir.listFiles()?.toList() ?: emptyList())
                     .filter { !it.name.startsWith(".") }
+                    .filter { f ->
+                        when (filter) {
+                            "video" -> f.isDirectory || f.isVideo()
+                            "audio" -> f.isDirectory || f.isAudio()
+                            else -> true
+                        }
+                    }
                     .sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
             }
             if (entries.isEmpty()) Text(

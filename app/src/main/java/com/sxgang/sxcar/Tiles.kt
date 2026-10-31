@@ -76,11 +76,11 @@ val DefaultTiles = listOf(
     ),
     Tile(
         id = "video", label = "Vídeos", icon = Icons.Filled.PlayCircle, color = SxRed,
-        builtin = { open(it, WebActivity::class.java, "url" to "https://m.youtube.com") },
+        builtin = { open(it, FilesActivity::class.java, "filter" to "video") },
     ),
     Tile(
         id = "music", label = "Músicas", icon = Icons.Filled.MusicNote, color = SxPurple,
-        builtin = { open(it, WebActivity::class.java, "url" to "https://music.youtube.com") },
+        builtin = { open(it, FilesActivity::class.java, "filter" to "audio") },
     ),
     Tile(
         id = "gps", label = "GPS", icon = Icons.Filled.Navigation, color = SxBlue,
