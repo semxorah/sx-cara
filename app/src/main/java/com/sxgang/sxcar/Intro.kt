@@ -85,7 +85,7 @@ fun Intro(onDone: () -> Unit) {
     )
 
     BoxWithConstraints(Modifier.fillMaxSize().background(SxDark), contentAlignment = Alignment.Center) {
-        val headH = maxHeight * 0.62f
+        val headH = maxHeight * 0.52f
         val headW = headH * 0.757f
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Box(contentAlignment = Alignment.Center) {
@@ -99,14 +99,14 @@ fun Intro(onDone: () -> Unit) {
                     Modifier.size(headW, headH).scale(alienScale).alpha(alienAlpha),
                 )
             }
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(10.dp))
             Text(
-                text, color = SxText, fontSize = 38.sp, fontWeight = FontWeight.Light, letterSpacing = 1.sp,
+                text, color = SxText, fontSize = 72.sp, fontWeight = FontWeight.Light, letterSpacing = 1.sp, lineHeight = 76.sp,
                 textAlign = TextAlign.Center, modifier = Modifier.alpha(textAlpha),
             )
             Spacer(Modifier.height(10.dp))
             Text(
-                "SX CAR", color = SxGreen, fontSize = 14.sp, fontWeight = FontWeight.Black, letterSpacing = 7.sp,
+                "SX CAR", color = SxGreen, fontSize = 27.sp, fontWeight = FontWeight.Black, letterSpacing = 10.sp,
                 modifier = Modifier.alpha(textAlpha),
             )
         }

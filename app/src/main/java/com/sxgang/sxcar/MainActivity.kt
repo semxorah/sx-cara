@@ -160,33 +160,29 @@ private fun Home(
     val ctx = LocalContext.current
     val tiles = remember(reloadKey, showHidden) { DefaultTiles.filter { showHidden || !resolver.isHidden(it.id) } }
 
-    // fundo: cabeça do alien bem discreta com brilho respirando (só uma animação, leve)
-    val breathe = rememberInfiniteTransition(label = "bg").animateFloat(
-        0.10f, 0.26f, infiniteRepeatable(tween(3200, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "breathe",
-    )
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        val h = maxHeight * 0.92f
-        Box(Modifier.align(Alignment.CenterEnd).padding(end = maxWidth * 0.10f), contentAlignment = Alignment.Center) {
-            Box(
-                Modifier.size(h * 1.3f, h * 1.15f).alpha(breathe.value * 0.9f)
-                    .background(Brush.radialGradient(listOf(Color(0x805AF2A0), Color(0x1A5AF2A0), Color.Transparent)))
-            )
-            Image(painterResource(R.drawable.alien_head), null, Modifier.size(h * 0.757f, h).alpha(0.16f + breathe.value * 0.4f))
-        }
-    }
-
     Row(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 18.dp)) {
         // ---- painel esquerdo: relógio, status, volume, brilho
-        Column(
-            Modifier.width(250.dp).fillMaxHeight(),
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
+        Column(Modifier.width(250.dp).fillMaxHeight()) {
             Clock()
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            // cabeça do alien preenchendo o espaço entre o relógio e os controles
+            val breathe = rememberInfiniteTransition(label = "bg").animateFloat(
+                0.25f, 0.55f, infiniteRepeatable(tween(3200, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "breathe",
+            )
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                val h = minOf(maxHeight, maxWidth / 0.757f)
+                val w = h * 0.757f
+                Box(
+                    Modifier.size(w * 1.9f, h * 1.4f).alpha(breathe.value)
+                        .background(Brush.radialGradient(listOf(Color(0x995AF2A0), Color(0x225AF2A0), Color.Transparent)))
+                )
+                Image(painterResource(R.drawable.alien_head), null, Modifier.size(w, h))
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 WifiStatus()
                 VolumeControl()
                 BrightnessControl()
             }
+            Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("SX CAR", color = SxGreen, fontWeight = FontWeight.Black, fontSize = 16.sp, letterSpacing = 3.sp)
                 Spacer(Modifier.weight(1f))
@@ -240,7 +236,7 @@ private fun TileCard(tile: Tile, subtitle: String, dimmed: Boolean, onClick: () 
         Modifier
             .aspectRatio(1.25f)
             .clip(RoundedCornerShape(22.dp))
-            .background(SxCard.copy(alpha = 0.86f))
+            .background(SxCard)
             .border(1.dp, tile.color.copy(alpha = 0.25f * alpha), RoundedCornerShape(22.dp))
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(16.dp),
@@ -314,11 +310,51 @@ private fun Modifier.combinedClickableCompat(onClick: () -> Unit) = this.combine
 private fun VolumeControl() {
     val ctx = LocalContext.current
     val am = remember { ctx.getSystemService(AudioManager::class.java) }
-    val max = remember { am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
+    val max = remember { am.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1) }
     var vol by remember { mutableFloatStateOf(am.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat()) }
-    LaunchedEffect(Unit) { while (true) { vol = am.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat(); delay(1500) } }
-    SliderRow(Icons.Filled.VolumeUp, "Volume", vol, 0f, max.toFloat()) {
-        vol = it; am.setStreamVolume(AudioManager.STREAM_MUSIC, it.toInt(), 0)
+    var dragging by remember { mutableStateOf(false) }
+    // só relê o volume real quando o dedo NÃO está no slider
+    LaunchedEffect(dragging) {
+        while (!dragging) { vol = am.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat(); delay(1500) }
+    }
+    Column(Modifier.clip(RoundedCornerShape(14.dp)).background(SxCard).padding(horizontal = 14.dp, vertical = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.VolumeUp, null, tint = SxGreen, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Volume", color = SxMuted, fontSize = 12.sp)
+            Spacer(Modifier.weight(1f))
+            Text("${vol.toInt()}", color = SxMuted, fontSize = 12.sp)
+        }
+        Slider(
+            value = vol.coerceIn(0f, max.toFloat()),
+            onValueChange = { dragging = true; vol = it },
+            onValueChangeFinished = {
+                applyVolume(am, vol.toInt().coerceIn(0, max))
+                dragging = false
+            },
+            valueRange = 0f..max.toFloat(), steps = (max - 1).coerceAtLeast(0),
+            colors = SliderDefaults.colors(thumbColor = SxGreen, activeTrackColor = SxGreen, inactiveTrackColor = SxCard2),
+            modifier = Modifier.height(30.dp),
+        )
+    }
+}
+
+/** Tenta o ajuste direto; se o painel ignorar, anda passo a passo como os botões físicos. */
+private fun applyVolume(am: AudioManager, target: Int) {
+    runCatching { am.setStreamVolume(AudioManager.STREAM_MUSIC, target, AudioManager.FLAG_SHOW_UI) }
+    var cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+    var guard = 0
+    while (cur != target && guard++ < 40) {
+        val dir = if (target > cur) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
+        runCatching { am.adjustStreamVolume(AudioManager.STREAM_MUSIC, dir, AudioManager.FLAG_SHOW_UI) }
+        val next = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+        if (next == cur) {
+            // último recurso: ajuste genérico (vai pro stream que o sistema considerar ativo)
+            runCatching { am.adjustVolume(dir, AudioManager.FLAG_SHOW_UI) }
+            val n2 = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+            if (n2 == cur) break
+            cur = n2
+        } else cur = next
     }
 }
 
