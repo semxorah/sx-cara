@@ -18,6 +18,10 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.animation.core.*
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
@@ -87,6 +91,12 @@ private fun Launcher() {
     var intro by remember { mutableStateOf(!IntroState.shown) }
 
     LaunchedEffect(reloadKey) { apps = resolver.allApps() }
+    // ao voltar de outra tela (ex.: escolha de pasta), atualiza os botões
+    val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycle) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) reloadKey++ }
+        lifecycle.lifecycle.addObserver(obs); onDispose { lifecycle.lifecycle.removeObserver(obs) }
+    }
     // recarrega quando um app é instalado/removido
     DisposableEffect(Unit) {
         val rec = object : android.content.BroadcastReceiver() {
@@ -150,6 +160,21 @@ private fun Home(
     val ctx = LocalContext.current
     val tiles = remember(reloadKey, showHidden) { DefaultTiles.filter { showHidden || !resolver.isHidden(it.id) } }
 
+    // fundo: cabeça do alien bem discreta com brilho respirando (só uma animação, leve)
+    val breathe = rememberInfiniteTransition(label = "bg").animateFloat(
+        0.10f, 0.26f, infiniteRepeatable(tween(3200, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "breathe",
+    )
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val h = maxHeight * 0.92f
+        Box(Modifier.align(Alignment.CenterEnd).padding(end = maxWidth * 0.10f), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier.size(h * 1.3f, h * 1.15f).alpha(breathe.value * 0.9f)
+                    .background(Brush.radialGradient(listOf(Color(0x805AF2A0), Color(0x1A5AF2A0), Color.Transparent)))
+            )
+            Image(painterResource(R.drawable.alien_head), null, Modifier.size(h * 0.757f, h).alpha(0.16f + breathe.value * 0.4f))
+        }
+    }
+
     Row(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 18.dp)) {
         // ---- painel esquerdo: relógio, status, volume, brilho
         Column(
@@ -181,8 +206,10 @@ private fun Home(
             items(tiles, key = { it.id }) { tile ->
                 val target = remember(apps, reloadKey) { resolver.resolve(tile, apps) }
                 val hidden = resolver.isHidden(tile.id)
+                val folder = resolver.chosenFolder(tile.id)
                 val subtitle = when {
                     tile.id == "apps" -> "${apps.size} instalados"
+                    folder != null -> "Pasta: " + folder.substringAfterLast('/')
                     tile.builtin != null -> "SX CAR"
                     target != null -> target.label
                     tile.systemAction != null -> "Sistema"
@@ -193,7 +220,7 @@ private fun Home(
                     onClick = {
                         when {
                             tile.id == "apps" -> onOpenDrawer()
-                            tile.builtin != null -> resolver.launch(tile, apps)
+                            folder != null || tile.builtin != null -> resolver.launch(tile, apps)
                             target == null && tile.systemAction == null -> onEdit(tile)
                             else -> if (!resolver.launch(tile, apps)) onEdit(tile)
                         }
@@ -213,7 +240,7 @@ private fun TileCard(tile: Tile, subtitle: String, dimmed: Boolean, onClick: () 
         Modifier
             .aspectRatio(1.25f)
             .clip(RoundedCornerShape(22.dp))
-            .background(SxCard)
+            .background(SxCard.copy(alpha = 0.86f))
             .border(1.dp, tile.color.copy(alpha = 0.25f * alpha), RoundedCornerShape(22.dp))
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(16.dp),
@@ -386,12 +413,13 @@ private fun AppIcon(app: AppEntry, size: androidx.compose.ui.unit.Dp) {
 
 @Composable
 private fun TileOptions(tile: Tile, resolver: AppResolver, apps: List<AppEntry>, onDismiss: () -> Unit) {
+    val ctx = LocalContext.current
     var picking by remember { mutableStateOf(false) }
     if (picking) {
         Dialog(onDismissRequest = onDismiss, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
             Box(Modifier.fillMaxSize().background(SxDark)) {
                 Drawer(apps, "Escolher app para \"${tile.label}\"", onBack = { picking = false }) {
-                    resolver.choose(tile.id, it.packageName); onDismiss()
+                    resolver.choose(tile.id, it.packageName); resolver.chooseFolder(tile.id, null); onDismiss()
                 }
             }
         }
@@ -404,7 +432,20 @@ private fun TileOptions(tile: Tile, resolver: AppResolver, apps: List<AppEntry>,
         title = { Text(tile.label, color = SxText) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(if (current != null) "Abre: ${current.label}" else "Nenhum app definido", color = SxMuted)
+                val folder = resolver.chosenFolder(tile.id)
+                Text(
+                    when {
+                        folder != null -> "Abre a pasta: $folder"
+                        tile.builtin != null -> "Abre: explorador do SX CAR"
+                        current != null -> "Abre: ${current.label}"
+                        else -> "Nenhum app definido"
+                    }, color = SxMuted,
+                )
+                OptBtn("Escolher uma pasta pra este botão", Icons.Filled.Folder) {
+                    ctx.startActivity(Intent(ctx, FilesActivity::class.java).putExtra("pickFor", tile.id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    onDismiss()
+                }
+                if (folder != null) OptBtn("Remover a pasta", Icons.Filled.FolderOff) { resolver.chooseFolder(tile.id, null); onDismiss() }
                 OptBtn("Escolher qual app abre", Icons.Filled.Apps) { picking = true }
                 if (resolver.chosenPackage(tile.id) != null)
                     OptBtn("Voltar ao automático", Icons.Filled.Refresh) { resolver.choose(tile.id, null); onDismiss() }
@@ -457,7 +498,7 @@ private fun SettingsDialog(showHidden: Boolean, onToggleHidden: (Boolean) -> Uni
                 OptBtn("Configurações do Android", Icons.Filled.Settings) {
                     ctx.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 }
-                Text("Dica: segure um botão pra trocar o app que ele abre ou escondê-lo.", color = SxMuted, fontSize = 12.sp)
+                Text("Dica: segure um botão pra escolher a pasta ou o app que ele abre, ou escondê-lo.", color = SxMuted, fontSize = 12.sp)
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Fechar", color = SxGreen) } },

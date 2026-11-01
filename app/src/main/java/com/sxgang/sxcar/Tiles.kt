@@ -149,6 +149,10 @@ class AppResolver(private val ctx: Context) {
     fun choose(tileId: String, pkg: String?) {
         prefs.edit().apply { if (pkg == null) remove("tile_$tileId") else putString("tile_$tileId", pkg) }.apply()
     }
+    fun chosenFolder(tileId: String): String? = prefs.getString("folder_$tileId", null)
+    fun chooseFolder(tileId: String, path: String?) {
+        prefs.edit().apply { if (path == null) remove("folder_$tileId") else putString("folder_$tileId", path) }.apply()
+    }
     fun isHidden(tileId: String) = prefs.getBoolean("hide_$tileId", false)
     fun setHidden(tileId: String, hidden: Boolean) = prefs.edit().putBoolean("hide_$tileId", hidden).apply()
 
@@ -168,6 +172,14 @@ class AppResolver(private val ctx: Context) {
     }
 
     fun launch(tile: Tile, apps: List<AppEntry>): Boolean {
+        // pasta escolhida pelo usuário tem prioridade sobre tudo
+        chosenFolder(tile.id)?.let { path ->
+            val i = Intent(ctx, FilesActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra("start", path).putExtra("title", tile.label)
+            if (tile.id == "video") i.putExtra("filter", "video")
+            if (tile.id == "music") i.putExtra("filter", "audio")
+            ctx.startActivity(i); return true
+        }
         tile.builtin?.let { it(ctx); return true }
         resolve(tile, apps)?.let { ctx.startActivity(it.launchIntent); return true }
         tile.systemAction?.let {

@@ -44,7 +44,14 @@ class FilesActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         val usbOnly = intent.getBooleanExtra("usb", false)
         val filter = intent.getStringExtra("filter")
-        setContent { MaterialTheme(colorScheme = darkColorScheme(primary = SxGreen)) { Explorer(usbOnly, filter) { finish() } } }
+        val start = intent.getStringExtra("start")
+        val title = intent.getStringExtra("title")
+        val pickFor = intent.getStringExtra("pickFor")   // id do botão que vai receber a pasta escolhida
+        setContent {
+            MaterialTheme(colorScheme = darkColorScheme(primary = SxGreen)) {
+                Explorer(usbOnly, filter, start, title, pickFor) { finish() }
+            }
+        }
     }
     override fun onResume() {
         super.onResume()
@@ -80,13 +87,18 @@ private fun roots(ctx: android.content.Context): List<Root> {
 private fun hasAllFiles(): Boolean = Build.VERSION.SDK_INT < 30 || Environment.isExternalStorageManager()
 
 @Composable
-private fun Explorer(usbOnly: Boolean, filter: String?, onExit: () -> Unit) {
+private fun Explorer(usbOnly: Boolean, filter: String?, start: String?, customTitle: String?, pickFor: String?, onExit: () -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     var granted by remember { mutableStateOf(hasAllFiles()) }
     val allRoots = remember(granted) { roots(ctx) }
     val rootList = remember(allRoots, usbOnly) { if (usbOnly) allRoots.filter { it.removable }.ifEmpty { allRoots } else allRoots }
-    var stack by remember { mutableStateOf<List<File>>(emptyList()) }
+    var stack by remember {
+        // abre direto na pasta escolhida, se ela ainda existir
+        val f = start?.let { File(it) }
+        mutableStateOf(if (f != null && f.isDirectory) listOf(f) else emptyList<File>())
+    }
     var refresh by remember { mutableIntStateOf(0) }
+    val resolver = remember { AppResolver(ctx) }
 
     LaunchedEffect(rootList) { if (rootList.size == 1 && stack.isEmpty()) stack = listOf(rootList[0].dir) }
 
@@ -105,9 +117,20 @@ private fun Explorer(usbOnly: Boolean, filter: String?, onExit: () -> Unit) {
                 Icon(Icons.Filled.ArrowBack, null, tint = SxText)
             }
             Text(
-                if (stack.isEmpty()) (when { usbOnly -> "USB"; filter == "video" -> "Vídeos"; filter == "audio" -> "Músicas"; else -> "Arquivos" }) else stack.last().name.ifBlank { "/" },
+                when {
+                    pickFor != null -> "Escolha a pasta e toque em USAR ESTA PASTA"
+                    stack.isNotEmpty() -> stack.last().name.ifBlank { "/" }
+                    customTitle != null -> customTitle
+                    usbOnly -> "USB"; filter == "video" -> "Vídeos"; filter == "audio" -> "Músicas"
+                    else -> "Arquivos"
+                },
                 color = SxText, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, modifier = Modifier.weight(1f),
             )
+            if (pickFor != null && stack.isNotEmpty()) Button(
+                onClick = { resolver.chooseFolder(pickFor, stack.last().absolutePath); onExit() },
+                colors = ButtonDefaults.buttonColors(containerColor = SxGreen, contentColor = SxDark),
+                shape = RoundedCornerShape(12.dp),
+            ) { Text("USAR ESTA PASTA", fontWeight = FontWeight.Bold) }
             if (!granted) TextButton(onClick = {
                 ctx.startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:${ctx.packageName}")))
             }) { Text("Permitir acesso aos arquivos", color = SxGreen) }
