@@ -32,7 +32,7 @@ import kotlin.math.*
 import kotlin.random.Random
 
 /** Controla se a intro já foi mostrada nesta ligada (processo). */
-object IntroState { var shown = false }
+object IntroState { var shown = false; var lastStop = 0L; var screenWentOff = false }
 
 private fun period(): Int {
     val h = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
@@ -51,7 +51,7 @@ private fun greetingAudio(): Int = when (period()) {
     else -> R.raw.boa_noite
 }
 
-private fun playGreeting(ctx: Context): MediaPlayer? = runCatching {
+internal fun playGreeting(ctx: Context): MediaPlayer? = runCatching {
     MediaPlayer.create(ctx, greetingAudio())?.apply {
         setAudioAttributes(
             AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANT)

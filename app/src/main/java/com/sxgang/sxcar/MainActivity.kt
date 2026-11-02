@@ -19,6 +19,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -97,12 +98,24 @@ private fun Launcher() {
     var showHidden by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var intro by remember { mutableStateOf(!IntroState.shown) }
+    var shortIntro by remember { mutableStateOf(false) }
+    var saver by remember { mutableStateOf(false) }
 
     LaunchedEffect(reloadKey) { apps = resolver.allApps() }
     // ao voltar de outra tela (ex.: escolha de pasta), atualiza os botões
     val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current
     DisposableEffect(lifecycle) {
-        val obs = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) reloadKey++ }
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            when (e) {
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> IntroState.lastStop = System.currentTimeMillis()
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
+                    reloadKey++
+                    // voltou de tela apagada / stand-by: saudação curta (voltar de outro app não conta)
+                    if (IntroState.screenWentOff && IntroState.shown) { IntroState.screenWentOff = false; saver = false; shortIntro = true }
+                }
+                else -> {}
+            }
+        }
         lifecycle.lifecycle.addObserver(obs); onDispose { lifecycle.lifecycle.removeObserver(obs) }
     }
     // recarrega quando um app é instalado/removido
@@ -115,17 +128,37 @@ private fun Launcher() {
             addDataScheme("package")
         }
         ctx.registerReceiver(rec, f)
-        onDispose { ctx.unregisterReceiver(rec) }
+        val scr = object : android.content.BroadcastReceiver() {
+            override fun onReceive(c: Context?, i: Intent?) { if (i?.action == Intent.ACTION_SCREEN_OFF) IntroState.screenWentOff = true }
+        }
+        ctx.registerReceiver(scr, android.content.IntentFilter(Intent.ACTION_SCREEN_OFF))
+        onDispose { ctx.unregisterReceiver(rec); ctx.unregisterReceiver(scr) }
     }
 
     if (intro) {
         Intro { IntroState.shown = true; intro = false }
         return
     }
+    if (shortIntro) {
+        ShortIntro { shortIntro = false }
+        return
+    }
 
     val prefs = remember { ctx.getSharedPreferences("sxcar", Context.MODE_PRIVATE) }
     var ufosOn by remember { mutableStateOf(prefs.getBoolean("ufos", true)) }
     val touch = remember { mutableStateOf<Pair<Offset, Long>?>(null) }
+    var saverMin by remember { mutableIntStateOf(prefs.getInt("saver_min", 2)) }
+
+    // inatividade: sem toque por N minutos na tela inicial -> descanso; toque no descanso -> intro curta
+    LaunchedEffect(touch.value, saverMin, screen, saver) {
+        if (saver) return@LaunchedEffect
+        if (saverMin <= 0 || screen != Screen.HOME) return@LaunchedEffect
+        delay(saverMin * 60_000L)
+        saver = true
+    }
+    LaunchedEffect(touch.value) {
+        if (saver && touch.value != null) { saver = false; shortIntro = true }
+    }
 
     Box(
         Modifier.fillMaxSize().background(SxDark)
@@ -153,7 +186,8 @@ private fun Launcher() {
                 }
             }
         }
-        if (ufosOn) UfoLayer(touch)
+        if (ufosOn && !saver) UfoLayer(touch)
+        if (saver) Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { } }) { Screensaver() }
     }
 
     editing?.let { tile ->
@@ -168,6 +202,11 @@ private fun Launcher() {
             onToggleHidden = { showHidden = it },
             ufosOn = ufosOn,
             onToggleUfos = { ufosOn = it; prefs.edit().putBoolean("ufos", it).apply() },
+            saverMin = saverMin,
+            onCycleSaver = {
+                saverMin = when (saverMin) { 0 -> 1; 1 -> 2; 2 -> 5; 5 -> 10; else -> 0 }
+                prefs.edit().putInt("saver_min", saverMin).apply()
+            },
             onReplayIntro = { showSettings = false; intro = true },
             onDismiss = { showSettings = false; reloadKey++ },
         )
@@ -536,7 +575,7 @@ private fun OptBtn(text: String, icon: androidx.compose.ui.graphics.vector.Image
 // ---------------------------------------------------------------- ajustes do launcher
 
 @Composable
-private fun SettingsDialog(showHidden: Boolean, onToggleHidden: (Boolean) -> Unit, ufosOn: Boolean, onToggleUfos: (Boolean) -> Unit, onReplayIntro: () -> Unit, onDismiss: () -> Unit) {
+private fun SettingsDialog(showHidden: Boolean, onToggleHidden: (Boolean) -> Unit, ufosOn: Boolean, onToggleUfos: (Boolean) -> Unit, saverMin: Int, onCycleSaver: () -> Unit, onReplayIntro: () -> Unit, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val isDefault = remember { isDefaultLauncher(ctx) }
     AlertDialog(
@@ -556,6 +595,7 @@ private fun SettingsDialog(showHidden: Boolean, onToggleHidden: (Boolean) -> Uni
                     ctx.startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${ctx.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 }
                 OptBtn(if (ufosOn) "Desligar discos voadores" else "Ligar discos voadores", Icons.Filled.AutoAwesome) { onToggleUfos(!ufosOn) }
+                OptBtn("Descanso de tela: " + (if (saverMin == 0) "desligado" else "após $saverMin min"), Icons.Filled.Bedtime) { onCycleSaver() }
                 OptBtn("Rever a intro", Icons.Filled.PlayArrow) { IntroState.shown = false; onReplayIntro() }
                 OptBtn("Configurações do Android", Icons.Filled.Settings) {
                     ctx.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
