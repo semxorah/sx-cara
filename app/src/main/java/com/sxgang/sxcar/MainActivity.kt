@@ -18,6 +18,11 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.animation.core.*
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
@@ -76,6 +81,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/** Espaço reservado pra barra do sistema que a multimídia mostra no topo. */
+private val TOP_INSET = 56.dp
+
 private enum class Screen { HOME, DRAWER }
 
 @Composable
@@ -115,7 +123,21 @@ private fun Launcher() {
         return
     }
 
-    Box(Modifier.fillMaxSize().background(SxDark)) {
+    val prefs = remember { ctx.getSharedPreferences("sxcar", Context.MODE_PRIVATE) }
+    var ufosOn by remember { mutableStateOf(prefs.getBoolean("ufos", true)) }
+    val touch = remember { mutableStateOf<Pair<Offset, Long>?>(null) }
+
+    Box(
+        Modifier.fillMaxSize().background(SxDark)
+            // só observa onde o dedo encosta (não consome o toque, os botões continuam funcionando)
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val d = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    touch.value = d.position to System.nanoTime()
+                }
+            }
+            .padding(top = TOP_INSET),
+    ) {
         when (screen) {
             Screen.HOME -> Home(
                 apps = apps, resolver = resolver, showHidden = showHidden,
@@ -131,6 +153,7 @@ private fun Launcher() {
                 }
             }
         }
+        if (ufosOn) UfoLayer(touch)
     }
 
     editing?.let { tile ->
@@ -143,6 +166,8 @@ private fun Launcher() {
         SettingsDialog(
             showHidden = showHidden,
             onToggleHidden = { showHidden = it },
+            ufosOn = ufosOn,
+            onToggleUfos = { ufosOn = it; prefs.edit().putBoolean("ufos", it).apply() },
             onReplayIntro = { showSettings = false; intro = true },
             onDismiss = { showSettings = false; reloadKey++ },
         )
@@ -160,7 +185,7 @@ private fun Home(
     val ctx = LocalContext.current
     val tiles = remember(reloadKey, showHidden) { DefaultTiles.filter { showHidden || !resolver.isHidden(it.id) } }
 
-    Row(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 18.dp)) {
+    Row(Modifier.fillMaxSize().padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 18.dp)) {
         // ---- painel esquerdo: relógio, status, volume, brilho
         Column(Modifier.width(250.dp).fillMaxHeight()) {
             Clock()
@@ -511,7 +536,7 @@ private fun OptBtn(text: String, icon: androidx.compose.ui.graphics.vector.Image
 // ---------------------------------------------------------------- ajustes do launcher
 
 @Composable
-private fun SettingsDialog(showHidden: Boolean, onToggleHidden: (Boolean) -> Unit, onReplayIntro: () -> Unit, onDismiss: () -> Unit) {
+private fun SettingsDialog(showHidden: Boolean, onToggleHidden: (Boolean) -> Unit, ufosOn: Boolean, onToggleUfos: (Boolean) -> Unit, onReplayIntro: () -> Unit, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val isDefault = remember { isDefaultLauncher(ctx) }
     AlertDialog(
@@ -530,6 +555,7 @@ private fun SettingsDialog(showHidden: Boolean, onToggleHidden: (Boolean) -> Uni
                 OptBtn("Permissão de brilho (alterar configurações)", Icons.Filled.LightMode) {
                     ctx.startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${ctx.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 }
+                OptBtn(if (ufosOn) "Desligar discos voadores" else "Ligar discos voadores", Icons.Filled.AutoAwesome) { onToggleUfos(!ufosOn) }
                 OptBtn("Rever a intro", Icons.Filled.PlayArrow) { IntroState.shown = false; onReplayIntro() }
                 OptBtn("Configurações do Android", Icons.Filled.Settings) {
                     ctx.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
